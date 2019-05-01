@@ -1,5 +1,10 @@
 
 #header-container
+  script(src='https://cdnjs.cloudflare.com/ajax/libs/mermaid/7.1.2/mermaid.js')
+  script.
+    $(document).load(function() {
+      mermaid.initialize({ startOnLoad: true });
+    });
   nav.nav#header(class=['is-' + appconfig.theme.primary], ref='header')
     .nav-left
       block rootNavLeft
