@@ -261,9 +261,9 @@ module.exports = {
         _id: content.entryPath
       }, {
         _id: content.entryPath,
-        title: content.meta.title || content.entryPath,
-        subtitle: content.meta.subtitle || '',
-        parentTitle: content.parent.title || '',
+        title: content.meta ? content.meta.title : content.entryPath,
+        subtitle: content.meta ? content.meta.subtitle : '',
+        parentTitle: content.parent ? content.parent.title : '',
         parentPath: parentPath,
         isDirectory: false,
         isEntry: true
