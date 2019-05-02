@@ -79,7 +79,7 @@ global.db.onReady.then(() => {
   return global.db.Entry.remove({})
 }).then(() => {
   job = new Cron({
-    cronTime: '0 */5 * * * *',
+    cronTime: '0 */2 * * * *',
     onTick: () => {
       // Make sure we don't start two concurrent jobs
 
@@ -192,11 +192,15 @@ global.db.onReady.then(() => {
 
       Promise.all(jobs).then(() => {
         global.winston.info('All jobs completed successfully! Going to sleep for now.')
-
+        global.winston.info(`jobUplWatchStarted = ${jobUplWatchStarted}`)
         if (!jobUplWatchStarted) {
           jobUplWatchStarted = true
           global.upl.initialScan().then(() => {
+            global.winston.info('Starting Cron job for 2 minute intervals.')
             job.start()
+          }).catch(err => {
+            global.winston.info('Error running initial scan:', err)
+            throw err
           })
         }
 
