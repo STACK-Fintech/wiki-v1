@@ -128,10 +128,14 @@ module.exports = {
         }).catch(err => {
           winston.error(err)
         })
+      }).then(() => {
+        const branch = self._repo.branch
+        winston.info(`Checkout the ${branch} branch`)
+        return self._git.exec('checkout', ['-b', `${branch}`])
       })
     }).catch((err) => {
       winston.error('Git remote error!')
-      throw err
+      winston.error(err)
     }).then(() => {
       winston.info('Git repository is OK.')
       return true
@@ -163,34 +167,43 @@ module.exports = {
 
     // Fetch
 
+    const branch = self._repo.branch
+
     winston.info('Performing pull from remote Git repository...')
-    return self._git.pull('origin', self._repo.branch).then((cProc) => {
-      winston.info('Git Pull completed.')
+    return self._git.pull('origin', self._repo.branch).then(() => {
+      winston.info(`Checkout the ${branch} branch`)
+      return self._git.exec('checkout', [`${branch}`])
+        .then(() => {
+          winston.info(`Setting upstream of ${branch} to origin/${branch}`)
+          return self._git.exec('branch', ['--set-upstream-to', `origin/${branch}`])
+        }).then((cProc) => {
+          winston.info('Git Pull completed.')
+        }).catch((err) => {
+          winston.error('Unable to fetch from git origin!')
+          winston.error(err)
+          throw err
+        })
+    }).then(() => {
+      // Check for changes
+
+      return self._git.exec('log', 'origin/' + self._repo.branch + '..HEAD').then((cProc) => {
+        let out = cProc.stdout.toString()
+
+        if (_.includes(out, 'commit')) {
+          winston.info('Performing push to remote Git repository...')
+          return self._git.push('origin', self._repo.branch).then(() => {
+            return winston.info('Git Push completed.')
+          })
+        } else {
+          winston.info('Git Push skipped. Repository is already in sync.')
+        }
+
+        return true
+      })
     })
       .catch((err) => {
-        winston.error('Unable to fetch from git origin!')
-        throw err
-      })
-      .then(() => {
-        // Check for changes
-
-        return self._git.exec('log', 'origin/' + self._repo.branch + '..HEAD').then((cProc) => {
-          let out = cProc.stdout.toString()
-
-          if (_.includes(out, 'commit')) {
-            winston.info('Performing push to remote Git repository...')
-            return self._git.push('origin', self._repo.branch).then(() => {
-              return winston.info('Git Push completed.')
-            })
-          } else {
-            winston.info('Git Push skipped. Repository is already in sync.')
-          }
-
-          return true
-        })
-      })
-      .catch((err) => {
         winston.error('Unable to push changes to remote Git repository!')
+        winston.error(err)
         throw err
       })
   },
