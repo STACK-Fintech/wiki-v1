@@ -243,7 +243,7 @@ module.exports = (port, spinner) => {
       },
       () => {
         if (req.body.gitUseRemote === false) { return false }
-        return exec.stdout('git', ['pull', 'origin', req.body.gitBranch], { cwd: gitDir }).then(result => {
+        return exec.stdout('git', ['pull', 'origin', req.body.gitBranch + ':' + req.body.gitBranch], { cwd: gitDir }).then(result => {
           return 'Git Pull operation successful.'
         })
       }

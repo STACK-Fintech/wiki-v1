@@ -14,6 +14,7 @@ const jimp = require('jimp')
 const imageSize = Promise.promisify(require('image-size'))
 const _ = require('lodash')
 
+const winston = global.winston // local ref
 /**
  * Uploads - Agent
  */
@@ -80,18 +81,21 @@ module.exports = {
   initialScan () {
     let self = this
 
+    winston.info('Reading uploads directory.')
     return fs.readdirAsync(self._uploadsPath).then((ls) => {
       // Get all folders
-
+      winston.info(`${ls.length} files/folders found.`)
       return Promise.map(ls, (f) => {
         return fs.statAsync(path.join(self._uploadsPath, f)).then((s) => { return { filename: f, stat: s } })
       }).filter((s) => { return s.stat.isDirectory() }).then((arrDirs) => {
+        winston.info(`Found ${arrDirs.length} directories.`)
         let folderNames = _.map(arrDirs, 'filename')
         folderNames.unshift('')
 
         // Add folders to DB
-
+        winston.info('Removing old uploaded folders')
         return db.UplFolder.remove({}).then(() => {
+          winston.info(`Inserting ${folderNames.length} folders into database.`)
           return db.UplFolder.insertMany(_.map(folderNames, (f) => {
             return {
               _id: 'f:' + f,
@@ -102,26 +106,36 @@ module.exports = {
           // Travel each directory and scan files
 
           let allFiles = []
-
+          winston.info('Traversing directories')
           return Promise.map(folderNames, (fldName) => {
+            winston.info(`Traversing directory: ${fldName}`)
             let fldPath = path.join(self._uploadsPath, fldName)
             return fs.readdirAsync(fldPath).then((fList) => {
+              winston.info(`${fldName} - ${fList.length} files found.`)
               return Promise.map(fList, (f) => {
                 return upl.processFile(fldName, f).then((mData) => {
                   if (mData) {
+                    winston.info(`Adding "${f}" to list of files.`)
                     allFiles.push(mData)
+                  } else {
+                    winston.error(`Skipping file "${f}"`)
                   }
                   return true
                 })
-              }, {concurrency: 3})
+              })
             })
-          }, {concurrency: 1}).finally(() => {
+          }).catch(err => {
+            winston.error('Error during initial scan:', err)
+          }).finally(() => {
             // Add files to DB
 
+            winston.info('Removing old uploaded files')
             return db.UplFile.remove({}).then(() => {
               if (_.isArray(allFiles) && allFiles.length > 0) {
+                winston.info(`Inserting ${allFiles.length} files into database.`)
                 return db.UplFile.insertMany(allFiles)
               } else {
+                winston.info('No files to insert, skipping.')
                 return true
               }
             })
@@ -130,8 +144,10 @@ module.exports = {
       })
     }).then(() => {
       // Watch for new changes
-
+      winston.info('Setting watcher for uploads folder.')
       return upl.watch()
+    }).catch(err => {
+      return winston.error('Failed during initial scan of uploads: ', err)
     })
   },
 
@@ -157,6 +173,7 @@ module.exports = {
    * @return     {Promise<Object>}  Promise of the file metadata
    */
   processFile (fldName, f) {
+    winston.info(`${fldName} - processing file: ${f}`)
     let self = this
 
     let fldPath = path.join(self._uploadsPath, fldName)
@@ -196,7 +213,7 @@ module.exports = {
             }
 
             // Generate thumbnail
-
+            winston.info(`${fldName} - generating thumbnail: ${f}`)
             return fs.statAsync(cacheThumbnailPathStr).then((st) => {
               return st.isFile()
             }).catch((err) => { // eslint-disable-line handle-callback-err
@@ -204,10 +221,14 @@ module.exports = {
             }).then((thumbExists) => {
               return (thumbExists) ? mData : fs.ensureDirAsync(cacheThumbnailPath.dir).then(() => {
                 return self.generateThumbnail(fPath, cacheThumbnailPathStr)
-              }).return(mData)
+              }).then(() => {
+                return mData
+              })
             })
           })
         }
+      } else {
+        winston.info(`${fldName} - file too large to save to uploads: ${f}`)
       }
 
       // Other Files
@@ -221,6 +242,8 @@ module.exports = {
         basename: fPathObj.name,
         filesize: s.size
       }
+    }).catch(err => {
+      return winston.error('Error processing file:', err)
     })
   },
 
@@ -237,6 +260,9 @@ module.exports = {
         .contain(150, 150)
         .rgba(false)
         .write(destPath)
+    }).catch(err => {
+      winston.error('Unable to generate thumbnail:', err)
+      throw err
     })
   },
 
