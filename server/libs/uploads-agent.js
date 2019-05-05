@@ -78,77 +78,69 @@ module.exports = {
    *
    * @return     {Promise<Void>}  Promise of the scan operation
    */
-  initialScan () {
+  async initialScan () {
     let self = this
 
     winston.info('Reading uploads directory.')
-    return fs.readdirAsync(self._uploadsPath).then((ls) => {
+    const ls = await fs.readdirAsync(self._uploadsPath)
+    try {
       // Get all folders
       winston.info(`${ls.length} files/folders found.`)
-      return Promise.map(ls, (f) => {
-        return fs.statAsync(path.join(self._uploadsPath, f)).then((s) => { return { filename: f, stat: s } })
-      }).filter((s) => { return s.stat.isDirectory() }).then((arrDirs) => {
-        winston.info(`Found ${arrDirs.length} directories.`)
-        let folderNames = _.map(arrDirs, 'filename')
-        folderNames.unshift('')
+      const arrDirs = await Promise.map(ls, async (f) => {
+        const s = await fs.statAsync(path.join(self._uploadsPath, f))
+        return { filename: f, stat: s }
+      }).filter((s) => { return s.stat.isDirectory() })
+      winston.info(`Found ${arrDirs.length} directories.`)
+      let folderNames = _.map(arrDirs, 'filename')
+      folderNames.unshift('')
 
-        // Add folders to DB
-        winston.info('Removing old uploaded folders')
-        return db.UplFolder.remove({}).then(() => {
-          winston.info(`Inserting ${folderNames.length} folders into database.`)
-          return db.UplFolder.insertMany(_.map(folderNames, (f) => {
-            return {
-              _id: 'f:' + f,
-              name: f
+      // Add folders to DB
+      winston.info('Removing old uploaded folders')
+      await db.UplFolder.remove({})
+      winston.info(`Inserting ${folderNames.length} folders into database.`)
+      await db.UplFolder.insertMany(_.map(folderNames, (f) => {
+        return {
+          _id: 'f:' + f,
+          name: f
+        }
+      }))
+      let allFiles = []
+      winston.info('Traversing directories')
+      try {
+        await Promise.map(folderNames, async (fldName) => {
+          winston.info(`Traversing directory: ${fldName}`)
+          let fldPath = path.join(self._uploadsPath, fldName)
+          const fList = await fs.readdirAsync(fldPath)
+          winston.info(`${fldName} - ${fList.length} files found.`)
+          await Promise.map(fList, async (f) => {
+            const mData = await upl.processFile(fldName, f)
+            if (mData) {
+              winston.info(`Adding "${f}" to list of files.`)
+              allFiles.push(mData)
+            } else {
+              winston.error(`Skipping file "${f}"`)
             }
-          }))
-        }).then(() => {
-          // Travel each directory and scan files
-
-          let allFiles = []
-          winston.info('Traversing directories')
-          return Promise.map(folderNames, (fldName) => {
-            winston.info(`Traversing directory: ${fldName}`)
-            let fldPath = path.join(self._uploadsPath, fldName)
-            return fs.readdirAsync(fldPath).then((fList) => {
-              winston.info(`${fldName} - ${fList.length} files found.`)
-              return Promise.map(fList, (f) => {
-                return upl.processFile(fldName, f).then((mData) => {
-                  if (mData) {
-                    winston.info(`Adding "${f}" to list of files.`)
-                    allFiles.push(mData)
-                  } else {
-                    winston.error(`Skipping file "${f}"`)
-                  }
-                  return true
-                })
-              })
-            })
-          }).catch(err => {
-            winston.error('Error during initial scan:', err)
-          }).finally(() => {
-            // Add files to DB
-
-            winston.info('Removing old uploaded files')
-            return db.UplFile.remove({}).then(() => {
-              if (_.isArray(allFiles) && allFiles.length > 0) {
-                winston.info(`Inserting ${allFiles.length} files into database.`)
-                return db.UplFile.insertMany(allFiles)
-              } else {
-                winston.info('No files to insert, skipping.')
-                return true
-              }
-            })
           })
         })
-      })
-    }).then(() => {
+      } catch (err) {
+        winston.error('Error during initial scan:', err)
+      } finally {
+        // Add files to DB
+        winston.info('Removing old uploaded files')
+        await db.UplFile.remove({})
+        if (_.isArray(allFiles) && allFiles.length > 0) {
+          winston.info(`Inserting ${allFiles.length} files into database.`)
+          await db.UplFile.insertMany(allFiles)
+        } else {
+          winston.info('No files to insert, skipping.')
+        }
+      }
       // Watch for new changes
       winston.info('Setting watcher for uploads folder.')
       return upl.watch()
-    }).catch(err => {
+    } catch (err) {
       return winston.error('Failed during initial scan of uploads: ', err)
-    })
+    }
   },
 
   /**
