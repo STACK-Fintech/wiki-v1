@@ -31,6 +31,13 @@ global.appdata = appconf.data
 global.winston = require('./libs/logger')(IS_DEBUG, 'SERVER')
 global.winston.info('Wiki.js is initializing...')
 
+function unhandled(err) {
+  global.winston.error(err)
+}
+
+process.on('unhandledException', unhandled)
+process.on('unhandledRejection', unhandled)
+
 // ----------------------------------------
 // Load global modules
 // ----------------------------------------
