@@ -164,17 +164,20 @@ module.exports = {
    * @param      {String}  f        The filename
    * @return     {Promise<Object>}  Promise of the file metadata
    */
-  processFile (fldName, f) {
+  async processFile (fldName, f) {
     winston.info(`${fldName} - processing file: ${f}`)
     let self = this
 
-    let fldPath = path.join(self._uploadsPath, fldName)
-    let fPath = path.join(fldPath, f)
-    let fPathObj = path.parse(fPath)
-    let fUid = crypto.createHash('md5').update(fldName + '/' + f).digest('hex')
-
-    return fs.statAsync(fPath).then((s) => {
-      if (!s.isFile()) { return false }
+    try {
+      let fldPath = path.join(self._uploadsPath, fldName)
+      let fPath = path.join(fldPath, f)
+      let fPathObj = path.parse(fPath)
+      let fUid = crypto.createHash('md5').update(fldName + '/' + f).digest('hex')
+      const s = await fs.statAsync(fPath)
+      if (!s.isFile()) {
+        winston.info(`"${fPath}" was not a valid file!`)
+        return false
+      }
 
       // Get MIME info
 
@@ -189,35 +192,37 @@ module.exports = {
 
       if (s.size < 3145728) { // ignore files larger than 3MB
         if (_.includes(['image/png', 'image/jpeg', 'image/gif', 'image/bmp'], mimeInfo.mime)) {
-          return self.getImageSize(fPath).then((mImgSize) => {
-            let cacheThumbnailPath = path.parse(path.join(self._uploadsThumbsPath, fUid + '.png'))
-            let cacheThumbnailPathStr = path.format(cacheThumbnailPath)
+          const mImgSize = await self.getImageSize(fPath)
+          let cacheThumbnailPath = path.parse(path.join(self._uploadsThumbsPath, fUid + '.png'))
+          let cacheThumbnailPathStr = path.format(cacheThumbnailPath)
 
-            let mData = {
-              _id: fUid,
-              category: 'image',
-              mime: mimeInfo.mime,
-              extra: mImgSize,
-              folder: 'f:' + fldName,
-              filename: f,
-              basename: fPathObj.name,
-              filesize: s.size
-            }
+          let mData = {
+            _id: fUid,
+            category: 'image',
+            mime: mimeInfo.mime,
+            extra: mImgSize,
+            folder: 'f:' + fldName,
+            filename: f,
+            basename: fPathObj.name,
+            filesize: s.size
+          }
 
-            // Generate thumbnail
-            winston.info(`${fldName} - generating thumbnail: ${f}`)
-            return fs.statAsync(cacheThumbnailPathStr).then((st) => {
-              return st.isFile()
-            }).catch((err) => { // eslint-disable-line handle-callback-err
-              return false
-            }).then((thumbExists) => {
-              return (thumbExists) ? mData : fs.ensureDirAsync(cacheThumbnailPath.dir).then(() => {
-                return self.generateThumbnail(fPath, cacheThumbnailPathStr)
-              }).then(() => {
-                return mData
-              })
-            })
-          })
+          // Generate thumbnail
+          winston.info(`${fldName} - generating thumbnail: ${f}`)
+          let thumbExists
+          try {
+            const st = await fs.statAsync(cacheThumbnailPathStr)
+            thumbExists = st.isFile()
+          } catch (err) {
+            thumbExists = false
+          }
+          if (thumbExists) {
+            return mData
+          } else {
+            await fs.ensureDirAsync(cacheThumbnailPath.dir)
+            await self.generateThumbnail(fPath, cacheThumbnailPathStr)
+            return mData
+          }
         }
       } else {
         winston.info(`${fldName} - file too large to save to uploads: ${f}`)
@@ -234,9 +239,9 @@ module.exports = {
         basename: fPathObj.name,
         filesize: s.size
       }
-    }).catch(err => {
+    } catch (err) {
       return winston.error('Error processing file:', err)
-    })
+    }
   },
 
   /**
@@ -246,16 +251,22 @@ module.exports = {
    * @param      {String}           destPath    The destination path
    * @return     {Promise<Object>}  Promise returning the resized image info
    */
-  generateThumbnail (sourcePath, destPath) {
-    return jimp.read(sourcePath).then(img => {
-      return img
-        .contain(150, 150)
-        .rgba(false)
-        .write(destPath)
-    }).catch(err => {
+  async generateThumbnail (sourcePath, destPath) {
+    try {
+      const img = await jimp.read(sourcePath)
+      await new Promise((resolve, reject) => {
+        img
+          .contain(150, 150)
+          .rgba(false)
+          .write(destPath, (err, img) => {
+            if (err) return reject(err)
+            return resolve(img)
+          })
+      })
+    } catch (err) {
       winston.error('Unable to generate thumbnail:', err)
       throw err
-    })
+    }
   },
 
   /**
