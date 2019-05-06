@@ -195,12 +195,12 @@ global.db.onReady.then(() => {
         global.winston.info(`jobUplWatchStarted = ${jobUplWatchStarted}`)
         if (!jobUplWatchStarted) {
           jobUplWatchStarted = true
-          global.upl.initialScan().catch(err => {
+          global.winston.info('Starting Cron job for 2 minute intervals.')
+          job.start()
+          return global.upl.initialScan().catch(err => {
             global.winston.info('Error running initial scan:', err)
             throw err
           })
-          global.winston.info('Starting Cron job for 2 minute intervals.')
-          return job.start()
         }
       }).catch((err) => {
         return global.winston.error('One or more jobs have failed: ', err)
