@@ -5,7 +5,10 @@
 // 1.0.0
 // Licensed under AGPLv3
 // ===========================================
-
+if (process.env.NEW_RELIC_KEY) {
+  require('newrelic')
+  console.log('New Relic APM enabled')
+}
 const path = require('path')
 const ROOTPATH = process.cwd()
 const SERVERPATH = path.join(ROOTPATH, 'server')

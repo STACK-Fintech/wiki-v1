@@ -55,7 +55,7 @@ module.exports = {
 
     // Connect
 
-    self.onReady = modb.connect(appconfig.db, { useMongoClient: true })
+    self.onReady = modb.connect(appconfig.db)
 
     return self
   }

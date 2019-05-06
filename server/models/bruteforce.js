@@ -8,7 +8,7 @@ const Mongoose = require('mongoose')
  * @type       {<Mongoose.Schema>}
  */
 var bruteForceSchema = Mongoose.Schema({
-  _id: { type: String, index: 1 },
+  _id: String,
   data: {
     count: Number,
     lastRequest: Date,
